@@ -1,46 +1,58 @@
 #!/usr/bin/env python3
 
 import rospy
-import math
 from std_msgs.msg import Float32
 from geometry_msgs.msg import Twist
-from turtlesim.msg import Pose
-
 from robotics_lab1.msg import Turtlecontrol
 
-class ControlNode:
-    def __init__(self):
-        rospy.init_node('control_node', anonymous=True)
+def pose_callback(msg):
+    global current_position
+    current_position = msg.linear.x
 
-        self.current_position = 0.0
-        self.desired_position = 0.0
-        self.control_gain = 0.0
+def control_params_callback(msg):
+    global desired_position, control_gain
+    desired_position = msg.xd
+    control_gain = msg.kp
 
-        # Subscribers
-        rospy.Subscriber('/turtle1/pose', Twist, self.pose_callback)
-        rospy.Subscriber('/turtle1/control_params', Turtlecontrol, self.control_params_callback)
+def proportional_control():
+    global current_position, desired_position, control_gain
+    error = desired_position - current_position
 
-        # Publisher
-        self.velocity_publisher = rospy.Publisher('/turtle1/cmd_vel', Twist, queue_size=10)
+    # Stop if the error is small enough
+    if abs(error) < 0.1:
+        control_velocity = 0.0
+    else:
+        control_velocity = control_gain * error
 
-        # Control Loop
-        rate = rospy.Rate(10)  # 10 Hz
-        while not rospy.is_shutdown():
-            self.proportional_control()
-            rate.sleep()
+    # Ensure the control velocity is within a reasonable range
+    max_velocity = 2.0
+    control_velocity = min(max_velocity, max(-max_velocity, control_velocity))
 
-    def pose_callback(self, msg):
-        self.current_position = msg.linear.x
+    # Publish velocity command
+    twist_msg = Twist()
+    twist_msg.linear.x = control_velocity
+    velocity_publisher.publish(twist_msg)
+    
+    print (current_position, " ---- ", desired_position)
 
-    def control_params_callback(self, msg):
-        self.desired_position = msg.xd
-        self.control_gain = msg.kp
+if __name__ == '__main__':
+    # initialize the node
+    rospy.init_node('control_node', anonymous=True)
 
-    def proportional_control(self):
-        error = self.desired_position - self.current_position
-        control_velocity = self.control_gain * error
+    global current_position, desired_position, control_gain
+    current_position = 0.0
+    desired_position = 0.0
+    control_gain = 0.0
 
-        # Publish velocity command
-        twist_msg = Twist()
-        twist_msg.linear.x = control_velocity
-        self.velocity_publisher.publish(twist_msg)
+    # Subscribers
+    rospy.Subscriber('/turtle1/pose', Twist, pose_callback)
+    rospy.Subscriber('/turtle1/control_params', Turtlecontrol, control_params_callback)
+
+    # Publisher
+    velocity_publisher = rospy.Publisher('/turtle1/cmd_vel', Twist, queue_size=10)
+
+    # Control Loop
+    rate = rospy.Rate(10)  # 10 Hz
+    while not rospy.is_shutdown():
+        proportional_control()
+        rate.sleep()
